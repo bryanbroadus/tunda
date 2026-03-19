@@ -3,59 +3,88 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { Role } from '@/lib/types'
 
 interface SidebarProps {
   business: { id: string; name: string; plan: string }
-  role: 'owner' | 'employee'
+  role: Role
 }
 
 type NavItem = { href: string; label: string; icon: string }
 type NavSection = { heading: string; items: NavItem[] }
 
-const ownerSections: NavSection[] = [
+const salesSection: NavSection = {
+  heading: 'SALES',
+  items: [
+    { href: '/dashboard/sales/pos', label: 'Point of Sale', icon: '🛒' },
+    { href: '/dashboard/sales/invoices', label: 'Invoices', icon: '🧾' },
+    { href: '/dashboard/sales/products', label: 'Products', icon: '📦' },
+    { href: '/dashboard/sales/customers', label: 'Customers', icon: '👥' },
+  ],
+}
+
+const purchasesSection: NavSection = {
+  heading: 'PURCHASES',
+  items: [
+    { href: '/dashboard/purchases/vendors', label: 'Vendors', icon: '🏪' },
+    { href: '/dashboard/purchases/bills', label: 'Bills', icon: '📄' },
+    { href: '/dashboard/purchases/catalog', label: 'Purchase Catalog', icon: '🗂️' },
+  ],
+}
+
+const financeSection: NavSection = {
+  heading: 'FINANCE',
+  items: [
+    { href: '/dashboard/accounting', label: 'Accounting', icon: '💰' },
+    { href: '/dashboard/banking', label: 'Banking', icon: '🏦' },
+  ],
+}
+
+const otherSection: NavSection = {
+  heading: 'OTHER',
+  items: [
+    { href: '/dashboard/reminders', label: 'SMS Reminders', icon: '📱' },
+    { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
+  ],
+}
+
+// Waiter: POS + Invoices only
+const waiterSections: NavSection[] = [
   {
     heading: 'SALES',
     items: [
       { href: '/dashboard/sales/pos', label: 'Point of Sale', icon: '🛒' },
       { href: '/dashboard/sales/invoices', label: 'Invoices', icon: '🧾' },
-      { href: '/dashboard/sales/products', label: 'Products', icon: '📦' },
-      { href: '/dashboard/sales/customers', label: 'Customers', icon: '👥' },
-    ],
-  },
-  {
-    heading: 'PURCHASES',
-    items: [
-      { href: '/dashboard/purchases/vendors', label: 'Vendors', icon: '🏪' },
-      { href: '/dashboard/purchases/bills', label: 'Bills', icon: '📄' },
-    ],
-  },
-  {
-    heading: 'FINANCE',
-    items: [
-      { href: '/dashboard/accounting', label: 'Accounting', icon: '💰' },
-      { href: '/dashboard/banking', label: 'Banking', icon: '🏦' },
-    ],
-  },
-  {
-    heading: 'OTHER',
-    items: [
-      { href: '/dashboard/reminders', label: 'SMS Reminders', icon: '📱' },
-      { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
     ],
   },
 ]
 
-const employeeSections: NavSection[] = [
+// Manager: all Sales + Purchases + Accounting (no Settings/Reminders/Banking)
+const managerSections: NavSection[] = [
+  salesSection,
+  purchasesSection,
   {
-    heading: 'SALES',
+    heading: 'FINANCE',
     items: [
-      { href: '/dashboard/sales/pos', label: 'Point of Sale', icon: '🛒' },
-      { href: '/dashboard/sales/invoices', label: 'Invoices', icon: '🧾' },
-      { href: '/dashboard/sales/products', label: 'Products', icon: '📦' },
-      { href: '/dashboard/sales/customers', label: 'Customers', icon: '👥' },
+      { href: '/dashboard/accounting', label: 'Accounting', icon: '💰' },
     ],
   },
 ]
+
+// Owner: everything
+const ownerSections: NavSection[] = [
+  salesSection,
+  purchasesSection,
+  financeSection,
+  otherSection,
+]
+
+function sectionsForRole(role: Role): NavSection[] {
+  if (role === 'owner') return ownerSections
+  if (role === 'manager') return managerSections
+  // waiter + employee
+  return waiterSections
+}
 
 function isActive(pathname: string, href: string): boolean {
   if (href === '/dashboard') return pathname === '/dashboard'
@@ -65,7 +94,7 @@ function isActive(pathname: string, href: string): boolean {
 export default function Sidebar({ business, role }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const sections = role === 'owner' ? ownerSections : employeeSections
+  const sections = sectionsForRole(role)
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -84,14 +113,14 @@ export default function Sidebar({ business, role }: SidebarProps) {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-900 truncate">{business.name}</p>
-            <p className="text-xs text-slate-400 capitalize">{business.plan} plan</p>
+            <p className="text-xs text-slate-400 capitalize">{role}</p>
           </div>
         </div>
       </div>
 
       {/* Nav links */}
       <nav className="flex-1 px-3 py-3 overflow-y-auto">
-        {/* Dashboard — always first */}
+        {/* Dashboard */}
         <Link
           href="/dashboard"
           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1 ${

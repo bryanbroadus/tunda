@@ -13,16 +13,25 @@ export default async function InvoicesPage() {
 
   const businessId = employee?.business_id as string
 
-  const { data: invoices } = await supabase
-    .from('invoices')
-    .select('*, customers(name, phone)')
-    .eq('business_id', businessId)
-    .order('created_at', { ascending: false })
+  const [{ data: invoices }, { data: bankAccounts }] = await Promise.all([
+    supabase
+      .from('invoices')
+      .select('*, customers(name, phone), invoice_items(id, qty, unit_price, description, products(name))')
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('bank_accounts')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .order('account_type'),
+  ])
 
   return (
     <InvoicesClient
       initialInvoices={invoices ?? []}
       businessId={businessId}
+      bankAccounts={bankAccounts ?? []}
     />
   )
 }

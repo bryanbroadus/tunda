@@ -1,39 +1,127 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  type Invoice, type InvoiceStatus,
+  type Invoice, type InvoiceStatus, type BankAccount,
   formatUGX, invoiceStatusLabel, statusColor,
 } from '@/lib/types'
 
-type InvoiceWithCustomer = Invoice & {
+type InvoiceWithDetails = Invoice & {
   customers: { name: string; phone: string } | null
+  invoice_items: { id: string; qty: number; unit_price: number; description: string | null; products: { name: string } | null }[]
 }
 
 type FilterTab = 'all' | 'unpaid' | 'partial' | 'overdue' | 'paid'
 
 interface Props {
-  initialInvoices: InvoiceWithCustomer[]
+  initialInvoices: InvoiceWithDetails[]
   businessId: string
+  bankAccounts: BankAccount[]
 }
 
 function isOverdue(invoice: Invoice): boolean {
   return invoice.status === 'open' && !!invoice.due_date && new Date(invoice.due_date) < new Date()
 }
 
-export default function InvoicesClient({ initialInvoices, businessId }: Props) {
-  const [invoices, setInvoices] = useState<InvoiceWithCustomer[]>(initialInvoices)
+function printInvoice(inv: InvoiceWithDetails) {
+  const w = window.open('', '_blank', 'width=600,height=750')
+  if (!w) return
+  const balance = inv.total_amount - inv.amount_paid
+  const rows = inv.invoice_items.map(item =>
+    `<tr>
+      <td style="padding:6px 8px;font-size:13px;">${item.products?.name ?? item.description ?? '—'}</td>
+      <td style="padding:6px 8px;text-align:center;font-size:13px;">${item.qty}</td>
+      <td style="padding:6px 8px;text-align:right;font-size:13px;">${formatUGX(item.unit_price)}</td>
+      <td style="padding:6px 8px;text-align:right;font-size:13px;">${formatUGX(item.unit_price * item.qty)}</td>
+    </tr>`
+  ).join('')
+
+  w.document.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.invoice_number}</title>
+  <style>
+    body{font-family:system-ui,sans-serif;margin:0;padding:24px;color:#1e293b;}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;}
+    .inv-title{font-size:28px;font-weight:700;color:#059669;}
+    .meta{font-size:13px;color:#64748b;line-height:1.8;}
+    table{width:100%;border-collapse:collapse;margin-top:24px;}
+    thead{background:#f8fafc;}
+    th{text-align:left;padding:8px;font-size:12px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0;}
+    th:last-child,th:nth-child(3){text-align:right;}
+    th:nth-child(2){text-align:center;}
+    tr:nth-child(even){background:#f8fafc;}
+    .totals{margin-top:16px;text-align:right;}
+    .totals .row{display:flex;justify-content:flex-end;gap:32px;padding:4px 8px;font-size:14px;}
+    .totals .row.total{font-weight:700;font-size:16px;border-top:2px solid #e2e8f0;padding-top:8px;}
+    .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
+    .paid{background:#d1fae5;color:#065f46;} .open{background:#dbeafe;color:#1e40af;}
+    .partial{background:#fef3c7;color:#92400e;} .overdue{background:#fee2e2;color:#991b1b;}
+    @media print{@page{margin:10mm;}}
+  </style></head><body>
+  <div class="header">
+    <div>
+      <div class="inv-title">INVOICE</div>
+      <div class="meta">
+        Invoice #: <strong>${inv.invoice_number}</strong><br>
+        Date: ${new Date(inv.issue_date).toLocaleDateString('en-UG',{day:'numeric',month:'long',year:'numeric'})}<br>
+        ${inv.due_date ? `Due: ${new Date(inv.due_date).toLocaleDateString('en-UG',{day:'numeric',month:'long',year:'numeric'})}` : ''}
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div class="meta">
+        ${inv.customers ? `<strong>Bill To:</strong><br>${inv.customers.name}<br>${inv.customers.phone}` : 'Cash Sale'}
+      </div>
+      <br>
+      <span class="badge ${isOverdue(inv)?'overdue':inv.status}">${isOverdue(inv)?'Overdue':invoiceStatusLabel(inv.status)}</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Amount</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="totals">
+    <div class="row"><span>Subtotal</span><span>${formatUGX(inv.total_amount)}</span></div>
+    <div class="row total"><span>TOTAL</span><span>${formatUGX(inv.total_amount)}</span></div>
+    <div class="row"><span>Amount Paid</span><span style="color:#059669">${formatUGX(inv.amount_paid)}</span></div>
+    ${balance > 0 ? `<div class="row"><span>Balance Due</span><span style="color:#dc2626;font-weight:700">${formatUGX(balance)}</span></div>` : ''}
+  </div>
+  ${inv.note ? `<div style="margin-top:24px;font-size:13px;color:#64748b;"><strong>Note:</strong> ${inv.note}</div>` : ''}
+  <script>window.onload=function(){window.print();}<\/script>
+  </body></html>`)
+  w.document.close()
+}
+
+export default function InvoicesClient({ initialInvoices, businessId, bankAccounts }: Props) {
+  const [invoices, setInvoices] = useState<InvoiceWithDetails[]>(initialInvoices)
   const [tab, setTab] = useState<FilterTab>('all')
-  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceWithCustomer | null>(null)
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceWithDetails | null>(null)
+  const [viewInvoice, setViewInvoice] = useState<InvoiceWithDetails | null>(null)
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile_money' | 'bank'>('cash')
+  const [paymentAccountId, setPaymentAccountId] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const cashDrawer = bankAccounts.find(a => a.account_type === 'cash_drawer')
+
+  useEffect(() => {
+    if (cashDrawer) setPaymentAccountId(cashDrawer.id)
+  }, [cashDrawer])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null)
+      }
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
 
   const filtered = useMemo(() => {
     return invoices.filter(inv => {
@@ -54,13 +142,15 @@ export default function InvoicesClient({ initialInvoices, businessId }: Props) {
     { key: 'paid', label: 'Paid' },
   ]
 
-  function openPayment(invoice: InvoiceWithCustomer) {
+  function openPayment(invoice: InvoiceWithDetails) {
     setPaymentInvoice(invoice)
     const balance = invoice.total_amount - invoice.amount_paid
     setPaymentAmount(String(balance))
     setPaymentNote('')
     setPaymentMethod('cash')
+    setPaymentAccountId(cashDrawer?.id ?? bankAccounts[0]?.id ?? '')
     setError('')
+    setOpenMenuId(null)
   }
 
   async function handleRecordPayment(e: React.FormEvent) {
@@ -79,24 +169,36 @@ export default function InvoicesClient({ initialInvoices, businessId }: Props) {
       amount,
       payment_date: todayStr,
       payment_method: paymentMethod,
+      account_id: paymentAccountId || null,
       note: paymentNote.trim() || null,
     })
 
     if (payErr) { setError(payErr.message); setSaving(false); return }
 
+    // Update account balance if account selected
+    if (paymentAccountId) {
+      const acc = bankAccounts.find(a => a.id === paymentAccountId)
+      if (acc) {
+        await supabase
+          .from('bank_accounts')
+          .update({ current_balance: acc.current_balance + amount })
+          .eq('id', paymentAccountId)
+      }
+    }
+
     // Refresh the invoice from DB
     const { data: updated } = await supabase
       .from('invoices')
-      .select('*, customers(name, phone)')
+      .select('*, customers(name, phone), invoice_items(id, qty, unit_price, description, products(name))')
       .eq('id', paymentInvoice.id)
       .single()
 
     if (updated) {
-      setInvoices(prev => prev.map(i => i.id === paymentInvoice.id ? updated as InvoiceWithCustomer : i))
+      setInvoices(prev => prev.map(i => i.id === paymentInvoice.id ? updated as InvoiceWithDetails : i))
     }
 
     // If customer had credit, reduce their balance
-    if (paymentInvoice.customer_id && paymentInvoice.customers) {
+    if (paymentInvoice.customer_id) {
       const { data: customer } = await supabase
         .from('customers')
         .select('credit_balance')
@@ -163,7 +265,7 @@ export default function InvoicesClient({ initialInvoices, businessId }: Props) {
                   <th className="text-right px-4 py-3">Paid</th>
                   <th className="text-right px-4 py-3">Balance</th>
                   <th className="text-left px-4 py-3">Status</th>
-                  <th className="px-4 py-3"></th>
+                  <th className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -195,14 +297,38 @@ export default function InvoicesClient({ initialInvoices, businessId }: Props) {
                           {statusLabel}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        {canPay && (
-                          <button
-                            onClick={() => openPayment(inv)}
-                            className="px-2 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700"
-                          >
-                            Record Payment
-                          </button>
+                      {/* Action dropdown */}
+                      <td className="px-4 py-3 relative" ref={openMenuId === inv.id ? menuRef : undefined}>
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === inv.id ? null : inv.id)}
+                          className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
+                          title="Actions"
+                        >
+                          ⌄
+                        </button>
+                        {openMenuId === inv.id && (
+                          <div className="absolute right-0 top-10 z-20 bg-white border border-slate-200 rounded-xl shadow-lg w-44 py-1">
+                            <button
+                              onClick={() => { setViewInvoice(inv); setOpenMenuId(null) }}
+                              className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                            >
+                              👁️ View Invoice
+                            </button>
+                            <button
+                              onClick={() => { printInvoice(inv); setOpenMenuId(null) }}
+                              className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                            >
+                              🖨️ Print Invoice
+                            </button>
+                            {canPay && (
+                              <button
+                                onClick={() => openPayment(inv)}
+                                className="w-full text-left px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
+                              >
+                                💳 Record Payment
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -213,6 +339,58 @@ export default function InvoicesClient({ initialInvoices, businessId }: Props) {
           </div>
         )}
       </div>
+
+      {/* View Invoice Modal */}
+      {viewInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">{viewInvoice.invoice_number}</h2>
+                <p className="text-sm text-slate-500">
+                  {new Date(viewInvoice.issue_date).toLocaleDateString('en-UG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  {viewInvoice.customers ? ` · ${viewInvoice.customers.name}` : ' · Cash Sale'}
+                </p>
+              </div>
+              <button onClick={() => setViewInvoice(null)} className="text-slate-400 hover:text-slate-600 text-xl">×</button>
+            </div>
+
+            <div className="space-y-1 mb-4">
+              {viewInvoice.invoice_items.map(item => (
+                <div key={item.id} className="flex justify-between text-sm py-1.5 border-b border-slate-100 last:border-0">
+                  <span className="text-slate-700">{item.products?.name ?? item.description ?? '—'} × {item.qty}</span>
+                  <span className="font-medium">{formatUGX(item.unit_price * item.qty)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 space-y-1.5 text-sm mb-4">
+              <div className="flex justify-between"><span className="text-slate-500">Total</span><span className="font-bold">{formatUGX(viewInvoice.total_amount)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Paid</span><span className="text-emerald-700 font-medium">{formatUGX(viewInvoice.amount_paid)}</span></div>
+              {viewInvoice.total_amount - viewInvoice.amount_paid > 0 && (
+                <div className="flex justify-between"><span className="text-slate-500">Balance</span><span className="text-red-600 font-bold">{formatUGX(viewInvoice.total_amount - viewInvoice.amount_paid)}</span></div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => { printInvoice(viewInvoice); setViewInvoice(null) }}
+                className="flex-1 py-2 border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 flex items-center justify-center gap-1"
+              >
+                🖨️ Print
+              </button>
+              {(viewInvoice.status === 'open' || viewInvoice.status === 'partial') && (
+                <button
+                  onClick={() => { openPayment(viewInvoice); setViewInvoice(null) }}
+                  className="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
+                >
+                  Record Payment
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Record Payment Modal */}
       {paymentInvoice && (
@@ -250,6 +428,21 @@ export default function InvoicesClient({ initialInvoices, businessId }: Props) {
                   <option value="bank">Bank</option>
                 </select>
               </div>
+              {bankAccounts.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Receiving Account</label>
+                  <select
+                    value={paymentAccountId}
+                    onChange={e => setPaymentAccountId(e.target.value)}
+                    className="input"
+                  >
+                    <option value="">— None —</option>
+                    {bankAccounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Note (optional)</label>
                 <input

@@ -2,21 +2,104 @@
 
 import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { type Product, type Customer, formatUGX } from '@/lib/types'
+import { type Product, type Customer, type BankAccount, formatUGX } from '@/lib/types'
 
 interface CartItem {
   product: Product
   qty: number
 }
 
+interface BusinessInfo {
+  name: string
+  business_phone: string | null
+  business_address: string | null
+  receipt_template: number
+  receipt_header: string | null
+  receipt_footer: string | null
+}
+
+interface ReceiptData {
+  invoiceNumber: string
+  items: CartItem[]
+  total: number
+  paymentType: 'cash' | 'credit'
+  accountName: string
+  customer: Customer | null
+  saleDate: string
+  business: BusinessInfo
+}
+
 interface Props {
   products: Product[]
   customers: Customer[]
+  bankAccounts: BankAccount[]
   businessId: string
   employeeId: string
+  businessInfo: BusinessInfo
 }
 
-export default function POSClient({ products, customers, businessId, employeeId }: Props) {
+function printReceipt(receipt: ReceiptData) {
+  const w = window.open('', '_blank', 'width=380,height=600')
+  if (!w) return
+  const tpl = receipt.business.receipt_template ?? 1
+  const isNarrow = tpl === 3
+
+  const rows = receipt.items.map(item =>
+    `<tr>
+      <td style="padding:3px 6px;font-size:13px;">${item.product.name} × ${item.qty}</td>
+      <td style="padding:3px 6px;text-align:right;font-size:13px;">${formatUGX(item.product.sell_price * item.qty)}</td>
+    </tr>`
+  ).join('')
+
+  const headerBg = tpl === 5 ? '#059669' : tpl === 4 ? '#1e40af' : '#1e293b'
+  const headerColor = '#ffffff'
+
+  w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${receipt.invoiceNumber}</title>
+  <style>
+    body { font-family: ${isNarrow ? 'monospace' : 'system-ui, sans-serif'}; margin:0; padding:0; background:#fff; }
+    .receipt { max-width:${isNarrow ? '320px' : '400px'}; margin:0 auto; padding:${tpl === 1 ? '16px' : '0'}; }
+    .header { background:${tpl === 1 || tpl === 2 ? 'none' : headerBg}; color:${tpl === 1 || tpl === 2 ? '#111' : headerColor}; padding:${tpl === 1 ? '0 0 12px' : '20px 16px'}; text-align:center; }
+    .business-name { font-size:${tpl === 3 ? '15px' : '20px'}; font-weight:bold; margin:0; letter-spacing:${isNarrow ? '1px' : '0'}; }
+    .sub { font-size:12px; color:${tpl === 1 || tpl === 2 ? '#64748b' : 'rgba(255,255,255,0.8)'}; margin-top:2px; }
+    .divider { border:none; border-top:${isNarrow ? '1px dashed #999' : '1px solid #e2e8f0'}; margin:10px 0; }
+    .body { padding:${tpl === 1 ? '0' : '12px 16px'}; }
+    table { width:100%; border-collapse:collapse; }
+    .total-row td { font-weight:bold; font-size:14px; padding-top:8px; border-top:${isNarrow ? '1px dashed #999' : '2px solid #e2e8f0'}; }
+    .meta { font-size:12px; color:#64748b; margin-bottom:4px; }
+    .footer { text-align:center; font-size:12px; color:#64748b; padding:${tpl === 1 ? '12px 0 0' : '12px 16px'}; border-top:${tpl === 1 ? 'none' : '1px solid #e2e8f0'}; }
+    @media print { @page { margin:4mm; } }
+  </style></head><body>
+  <div class="receipt">
+    <div class="header">
+      ${receipt.business.receipt_header ? `<p class="sub">${receipt.business.receipt_header}</p>` : ''}
+      <p class="business-name">${receipt.business.name}</p>
+      ${receipt.business.business_phone ? `<p class="sub">${receipt.business.business_phone}</p>` : ''}
+      ${receipt.business.business_address ? `<p class="sub">${receipt.business.business_address}</p>` : ''}
+    </div>
+    <div class="body">
+      <p class="meta">Receipt: <strong>${receipt.invoiceNumber}</strong></p>
+      <p class="meta">Date: ${new Date(receipt.saleDate).toLocaleDateString('en-UG', { day:'numeric', month:'short', year:'numeric' })}</p>
+      ${receipt.customer ? `<p class="meta">Customer: ${receipt.customer.name}</p>` : ''}
+      <p class="meta">Payment: ${receipt.paymentType === 'cash' ? receipt.accountName : 'Credit / Account'}</p>
+      <hr class="divider"/>
+      <table>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td style="padding:3px 6px;">TOTAL</td>
+            <td style="padding:3px 6px;text-align:right;">${formatUGX(receipt.total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="footer">${receipt.business.receipt_footer ?? 'Thank you for your business!'}</div>
+  </div>
+  <script>window.onload=function(){window.print();}<\/script>
+  </body></html>`)
+  w.document.close()
+}
+
+export default function POSClient({ products, customers, bankAccounts, businessId, employeeId, businessInfo }: Props) {
   const [cart, setCart] = useState<CartItem[]>([])
   const [search, setSearch] = useState('')
   const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('cash')
@@ -26,13 +109,13 @@ export default function POSClient({ products, customers, businessId, employeeId 
   const [saleDate, setSaleDate] = useState(() => new Date().toISOString().split('T')[0])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [receipt, setReceipt] = useState<{
-    invoiceNumber: string
-    items: CartItem[]
-    total: number
-    paymentType: string
-    customer: Customer | null
-  } | null>(null)
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+
+  // Default to Cash Drawer account
+  const cashDrawer = bankAccounts.find(a => a.account_type === 'cash_drawer')
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(cashDrawer?.id ?? bankAccounts[0]?.id ?? '')
+
+  const selectedAccount = bankAccounts.find(a => a.id === selectedAccountId)
 
   const filteredProducts = useMemo(() =>
     products.filter(p => p.name.toLowerCase().includes(search.toLowerCase())),
@@ -78,7 +161,6 @@ export default function POSClient({ products, customers, businessId, employeeId 
 
     const supabase = createClient()
 
-    // Get invoice number
     const { data: invoiceNumber, error: rpcError } = await supabase
       .rpc('next_invoice_number', { p_business_id: businessId })
 
@@ -88,9 +170,6 @@ export default function POSClient({ products, customers, businessId, employeeId 
       return
     }
 
-    const issueDateStr = saleDate
-
-    // Insert invoice
     const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
       .insert({
@@ -99,7 +178,7 @@ export default function POSClient({ products, customers, businessId, employeeId 
         customer_id: selectedCustomer?.id ?? null,
         invoice_number: invoiceNumber,
         status: paymentType === 'cash' ? 'paid' : 'open',
-        issue_date: issueDateStr,
+        issue_date: saleDate,
         total_amount: cartTotal,
         amount_paid: paymentType === 'cash' ? cartTotal : 0,
         payment_method: paymentType,
@@ -110,7 +189,6 @@ export default function POSClient({ products, customers, businessId, employeeId 
 
     if (invoiceError) { setError(invoiceError.message); setSubmitting(false); return }
 
-    // Insert invoice items
     const { error: itemsError } = await supabase.from('invoice_items').insert(
       cart.map(item => ({
         invoice_id: invoice.id,
@@ -122,16 +200,24 @@ export default function POSClient({ products, customers, businessId, employeeId 
     )
     if (itemsError) { setError(itemsError.message); setSubmitting(false); return }
 
-    // For cash: insert a payment record
     if (paymentType === 'cash') {
       await supabase.from('invoice_payments').insert({
         invoice_id: invoice.id,
         business_id: businessId,
         amount: cartTotal,
-        payment_date: issueDateStr,
+        payment_date: saleDate,
         payment_method: 'cash',
+        account_id: selectedAccountId || null,
         note: null,
       })
+
+      // Update bank account balance
+      if (selectedAccount) {
+        await supabase
+          .from('bank_accounts')
+          .update({ current_balance: selectedAccount.current_balance + cartTotal })
+          .eq('id', selectedAccountId)
+      }
     }
 
     // Deduct stock
@@ -150,13 +236,18 @@ export default function POSClient({ products, customers, businessId, employeeId 
         .eq('id', selectedCustomer.id)
     }
 
-    setReceipt({
+    const receiptData: ReceiptData = {
       invoiceNumber,
       items: cart,
       total: cartTotal,
       paymentType,
+      accountName: selectedAccount?.name ?? 'Cash',
       customer: selectedCustomer,
-    })
+      saleDate,
+      business: businessInfo,
+    }
+
+    setReceipt(receiptData)
     setCart([])
     setNote('')
     setSelectedCustomer(null)
@@ -175,7 +266,7 @@ export default function POSClient({ products, customers, businessId, employeeId 
           <p className="text-base font-medium text-emerald-700 mb-1">Receipt — {receipt.invoiceNumber}</p>
           <p className="text-sm text-slate-500 mb-6">
             {receipt.paymentType === 'cash'
-              ? 'Cash payment received.'
+              ? `Paid via ${receipt.accountName}.`
               : `Charged to ${receipt.customer?.name}'s account.`}
           </p>
 
@@ -193,12 +284,20 @@ export default function POSClient({ products, customers, businessId, employeeId 
             </div>
           </div>
 
-          <button
-            onClick={() => setReceipt(null)}
-            className="w-full py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
-          >
-            New Sale
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => printReceipt(receipt)}
+              className="flex-1 py-2.5 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700 flex items-center justify-center gap-2"
+            >
+              🖨️ Print Receipt
+            </button>
+            <button
+              onClick={() => setReceipt(null)}
+              className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
+            >
+              New Sale
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -273,7 +372,7 @@ export default function POSClient({ products, customers, businessId, employeeId 
             <span>{formatUGX(cartTotal)}</span>
           </div>
 
-          {/* Payment type */}
+          {/* Payment type: Cash or Credit */}
           <div className="flex rounded-lg overflow-hidden border border-slate-200">
             {(['cash', 'credit'] as const).map(type => (
               <button
@@ -287,6 +386,25 @@ export default function POSClient({ products, customers, businessId, employeeId 
               </button>
             ))}
           </div>
+
+          {/* Payment account selector (cash only) */}
+          {paymentType === 'cash' && bankAccounts.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Paying Account</label>
+              <select
+                value={selectedAccountId}
+                onChange={e => setSelectedAccountId(e.target.value)}
+                className="input text-xs"
+              >
+                {bankAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                    {acc.account_type === 'mobile_money' && acc.provider ? ` (${acc.provider.toUpperCase()})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Customer selector for credit */}
           {paymentType === 'credit' && (

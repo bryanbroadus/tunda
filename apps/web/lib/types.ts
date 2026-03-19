@@ -3,11 +3,11 @@
 // ============================================================
 
 export type Plan = 'free' | 'starter' | 'business' | 'shop_plus'
-export type Role = 'owner' | 'employee'
+export type Role = 'owner' | 'manager' | 'waiter' | 'employee'
 export type InvoiceStatus = 'draft' | 'open' | 'partial' | 'paid' | 'overdue' | 'void'
 export type BillStatus = 'draft' | 'open' | 'partial' | 'paid'
 export type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
-export type BankAccountType = 'cash' | 'checking' | 'savings' | 'mobile_money'
+export type BankAccountType = 'cash_drawer' | 'cash' | 'checking' | 'savings' | 'mobile_money'
 export type PaymentMethod = 'cash' | 'credit' | 'mobile_money' | 'bank'
 
 // ─── Core ────────────────────────────────────────────────
@@ -18,6 +18,12 @@ export interface Business {
   plan: Plan
   next_invoice_number: number
   next_bill_number: number
+  receipt_template: number
+  invoice_template: number
+  business_phone: string | null
+  business_address: string | null
+  receipt_header: string | null
+  receipt_footer: string | null
   created_at: string
 }
 
@@ -68,6 +74,18 @@ export interface Vendor {
   created_at: string
 }
 
+// ─── Purchase Catalog ────────────────────────────────────
+export interface PurchaseCatalogItem {
+  id: string
+  business_id: string
+  name: string
+  category: string | null
+  unit: string | null
+  default_cost: number
+  is_active: boolean
+  created_at: string
+}
+
 // ─── Purchase Bills ──────────────────────────────────────
 export interface PurchaseBill {
   id: string
@@ -87,6 +105,7 @@ export interface PurchaseBillItem {
   id: string
   bill_id: string
   product_id: string | null
+  purchase_item_id: string | null
   description: string | null
   qty: number
   unit_cost: number
@@ -99,6 +118,7 @@ export interface PurchaseBillPayment {
   business_id: string
   amount: number
   payment_date: string
+  account_id: string | null
   note: string | null
   created_at: string
 }
@@ -138,6 +158,7 @@ export interface InvoicePayment {
   amount: number
   payment_date: string
   payment_method: PaymentMethod | null
+  account_id: string | null
   note: string | null
   created_at: string
 }
@@ -148,6 +169,7 @@ export interface BankAccount {
   business_id: string
   name: string
   account_type: BankAccountType
+  provider: string | null
   institution: string | null
   opening_balance: number
   current_balance: number
@@ -234,4 +256,25 @@ export function statusColor(status: InvoiceStatus | BillStatus): string {
     void:    'bg-slate-100 text-slate-400',
   }
   return map[status] ?? 'bg-slate-100 text-slate-500'
+}
+
+export function accountTypeLabel(type: BankAccountType): string {
+  const map: Record<BankAccountType, string> = {
+    cash_drawer:  'Cash Drawer',
+    cash:         'Cash',
+    checking:     'Checking Account',
+    savings:      'Savings Account',
+    mobile_money: 'Mobile Money',
+  }
+  return map[type]
+}
+
+export function roleLabel(role: Role): string {
+  const map: Record<Role, string> = {
+    owner:    'Owner',
+    manager:  'Manager',
+    waiter:   'Waiter',
+    employee: 'Employee',
+  }
+  return map[role]
 }

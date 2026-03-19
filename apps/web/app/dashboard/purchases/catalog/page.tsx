@@ -1,14 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import AccountingClient from './AccountingClient'
+import CatalogClient from './CatalogClient'
 
-export default async function AccountingPage() {
+export default async function PurchaseCatalogPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: employee } = await supabase
     .from('employees')
-    .select('business_id, role, businesses(plan)')
+    .select('business_id, role')
     .eq('user_id', user!.id)
     .single()
 
@@ -17,7 +17,12 @@ export default async function AccountingPage() {
   }
 
   const businessId = employee.business_id as string
-  const plan = (employee.businesses as unknown as { plan: string } | null)?.plan ?? 'free'
 
-  return <AccountingClient businessId={businessId} plan={plan} />
+  const { data: items } = await supabase
+    .from('purchase_catalog')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('name')
+
+  return <CatalogClient initialItems={items ?? []} businessId={businessId} />
 }

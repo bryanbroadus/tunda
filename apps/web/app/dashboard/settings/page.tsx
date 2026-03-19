@@ -14,16 +14,31 @@ export default async function SettingsPage() {
 
   if (employee?.role !== 'owner') redirect('/dashboard')
 
-  const business = employee.businesses as unknown as { id: string; name: string; plan: string } | null
-  const { data: employees } = await supabase
-    .from('employees')
-    .select('id, role, user_id')
-    .eq('business_id', employee.business_id)
+  const businessId = employee.business_id as string
+  const business = employee.businesses as unknown as {
+    id: string; name: string; plan: string
+    receipt_template: number; invoice_template: number
+    business_phone: string | null; business_address: string | null
+    receipt_header: string | null; receipt_footer: string | null
+  } | null
+
+  const [{ data: employees }, { data: bankAccounts }] = await Promise.all([
+    supabase
+      .from('employees')
+      .select('id, role, user_id')
+      .eq('business_id', businessId),
+    supabase
+      .from('bank_accounts')
+      .select('*')
+      .eq('business_id', businessId)
+      .order('account_type'),
+  ])
 
   return (
     <SettingsClient
       business={business!}
       employees={employees ?? []}
+      bankAccounts={bankAccounts ?? []}
       currentUserId={user!.id}
     />
   )
