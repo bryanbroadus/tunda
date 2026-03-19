@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -9,6 +9,30 @@ export default function OnboardingPage() {
   const [businessName, setBusinessName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checking, setChecking] = useState(true)
+
+  // On mount: check if this user already has a business set up (e.g. from a
+  // previous partial attempt). If they do, skip straight to dashboard.
+  useEffect(() => {
+    async function checkExisting() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      const { data: employee } = await supabase
+        .from('employees')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (employee) {
+        router.replace('/dashboard')
+      } else {
+        setChecking(false)
+      }
+    }
+    checkExisting()
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -17,29 +41,52 @@ export default function OnboardingPage() {
 
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/login'); return }
 
-    if (!user) {
-      router.push('/login')
+    // Guard: check again in case they have a business already (e.g. double submit)
+    const { data: existingEmployee } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (existingEmployee) {
+      router.replace('/dashboard')
       return
     }
 
-    // Create business
-    const { data: business, error: bizError } = await supabase
+    // Check if they have an orphaned business without an employee record
+    const { data: existingBusiness } = await supabase
       .from('businesses')
-      .insert({ name: businessName.trim(), owner_id: user.id })
-      .select()
-      .single()
+      .select('id')
+      .eq('owner_id', user.id)
+      .maybeSingle()
 
-    if (bizError) {
-      setError(bizError.message)
-      setLoading(false)
-      return
+    let businessId: string
+
+    if (existingBusiness) {
+      // Repair: business exists but employee record is missing — just create the employee
+      businessId = existingBusiness.id
+    } else {
+      // Normal path: create the business
+      const { data: business, error: bizError } = await supabase
+        .from('businesses')
+        .insert({ name: businessName.trim(), owner_id: user.id })
+        .select('id')
+        .single()
+
+      if (bizError) {
+        setError(bizError.message)
+        setLoading(false)
+        return
+      }
+      businessId = business.id
     }
 
-    // Create owner employee record
+    // Create the owner employee record
     const { error: empError } = await supabase
       .from('employees')
-      .insert({ business_id: business.id, user_id: user.id, role: 'owner' })
+      .insert({ business_id: businessId, user_id: user.id, role: 'owner' })
 
     if (empError) {
       setError(empError.message)
@@ -49,6 +96,14 @@ export default function OnboardingPage() {
 
     router.push('/dashboard')
     router.refresh()
+  }
+
+  if (checking) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    )
   }
 
   return (
