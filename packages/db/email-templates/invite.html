@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You're invited to Tunda</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f8fafc;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:560px;">
+
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom:24px;">
+              <table cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="background:#059669;border-radius:14px;width:48px;height:48px;text-align:center;vertical-align:middle;">
+                    <span style="color:#ffffff;font-size:22px;font-weight:700;line-height:48px;">T</span>
+                  </td>
+                  <td style="padding-left:10px;vertical-align:middle;">
+                    <span style="font-size:22px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;">Tunda</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Card -->
+          <tr>
+            <td style="background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr><td style="background:#059669;height:4px;"></td></tr>
+              </table>
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="padding:40px 40px 32px;">
+                    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0f172a;line-height:1.3;">
+                      You&apos;ve been invited to Tunda
+                    </h1>
+                    <p style="margin:0 0 24px;font-size:15px;color:#64748b;line-height:1.6;">
+                      Your employer has invited you to join their Tunda account. Accept the invitation to access the point of sale, inventory, and customer management system.
+                    </p>
+                    <table cellpadding="0" cellspacing="0" role="presentation">
+                      <tr>
+                        <td style="border-radius:10px;background:#059669;">
+                          <a href="{{ .ConfirmationURL }}"
+                             style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;line-height:1;">
+                            Accept invitation
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;line-height:1.6;">
+                      This invitation expires in 24 hours. If you weren&apos;t expecting this, you can ignore it.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr><td style="padding:0 40px;"><div style="height:1px;background:#f1f5f9;"></div></td></tr>
+              </table>
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="padding:20px 40px 32px;">
+                    <p style="margin:0 0 6px;font-size:12px;color:#94a3b8;">Or copy this link into your browser:</p>
+                    <p style="margin:0;font-size:12px;color:#059669;word-break:break-all;">{{ .ConfirmationURL }}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 0 0;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6;">
+                Tunda &mdash; Business management for Uganda<br/>
+                Built by <a href="https://kazimedia.co" style="color:#059669;text-decoration:none;">Kazimedia</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
