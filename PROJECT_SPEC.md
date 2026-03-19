@@ -1,0 +1,339 @@
+# Tunda — Project Specification
+> A stock management, point-of-sale, credit tracking, and accounting system for small businesses in Uganda.
+
+---
+
+## Project Overview
+
+Build a multi-tenant SaaS web application (with a companion mobile app) that gives small businesses in Uganda — liquor stores, hardware shops, salons, pharmacies — an affordable, easy-to-use system for:
+
+- Managing inventory/stock
+- Recording sales (cash or credit)
+- Tracking customer credit accounts + sending SMS payment reminders
+- Basic accounting (revenue, cost, profit, cash vs. banked money)
+
+The system is designed for widespread adoption via a freemium pricing model, priced in UGX.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Database + Auth + Backend | Supabase (PostgreSQL + Edge Functions + Auth) |
+| Web App | Next.js (App Router) deployed on Vercel |
+| Mobile App | Expo (React Native) — same Supabase client |
+| SMS Reminders | Africa's Talking API |
+| Scheduled Jobs | Supabase pg_cron + Edge Functions |
+| Styling | Tailwind CSS |
+
+---
+
+## Repository & Folder Structure
+
+```
+tunda/
+├── apps/
+│   ├── web/          # Next.js web app
+│   └── mobile/       # Expo mobile app
+├── packages/
+│   └── db/           # Supabase schema, migrations, seed data
+└── README.md
+```
+
+Use a monorepo structure (e.g. with Turborepo or simple npm workspaces).
+
+---
+
+## Database Schema
+
+Run these migrations in Supabase in order.
+
+### `businesses`
+```sql
+create table businesses (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  owner_id uuid references auth.users(id),
+  plan text default 'free', -- free | starter | business | shop_plus
+  created_at timestamptz default now()
+);
+```
+
+### `employees`
+```sql
+create table employees (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  user_id uuid references auth.users(id),
+  role text default 'employee', -- owner | employee
+  created_at timestamptz default now()
+);
+```
+
+### `products`
+```sql
+create table products (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  name text not null,
+  category text,
+  buy_price numeric(12,2) not null,
+  sell_price numeric(12,2) not null,
+  stock_qty integer default 0,
+  low_stock_threshold integer default 5,
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
+```
+
+### `customers`
+```sql
+create table customers (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  name text not null,
+  phone text not null,
+  credit_limit numeric(12,2) default 0,
+  credit_balance numeric(12,2) default 0, -- amount currently owed
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
+```
+
+### `sales`
+```sql
+create table sales (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  employee_id uuid references employees(id),
+  customer_id uuid references customers(id), -- null if cash sale
+  payment_type text not null, -- cash | credit
+  total_amount numeric(12,2) not null,
+  note text,
+  created_at timestamptz default now()
+);
+```
+
+### `sale_items`
+```sql
+create table sale_items (
+  id uuid primary key default gen_random_uuid(),
+  sale_id uuid references sales(id) on delete cascade,
+  product_id uuid references products(id),
+  qty integer not null,
+  unit_price numeric(12,2) not null,
+  unit_cost numeric(12,2) not null
+);
+```
+
+### `credit_payments`
+```sql
+create table credit_payments (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  customer_id uuid references customers(id),
+  amount numeric(12,2) not null,
+  note text,
+  created_at timestamptz default now()
+);
+```
+
+### `cash_log`
+```sql
+create table cash_log (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  type text not null, -- sale | bank_deposit | expense | credit_payment
+  amount numeric(12,2) not null,
+  note text,
+  created_at timestamptz default now()
+);
+```
+
+### `reminder_config`
+```sql
+create table reminder_config (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade unique,
+  is_enabled boolean default false,
+  schedule text default 'weekly', -- daily | weekly | monthly | custom
+  custom_cron text, -- optional custom cron expression
+  message_template text default 'Hello {name}, you have an outstanding balance of UGX {balance} at {business}. Please make a payment. Thank you.',
+  updated_at timestamptz default now()
+);
+```
+
+### `stock_adjustments`
+```sql
+create table stock_adjustments (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  product_id uuid references products(id),
+  qty_change integer not null, -- positive = restock, negative = write-off
+  reason text,
+  created_at timestamptz default now()
+);
+```
+
+---
+
+## Row Level Security (RLS)
+
+Enable RLS on every table. The core policy pattern:
+
+```sql
+-- Example for products
+alter table products enable row level security;
+
+create policy "Users can only access their business data"
+on products for all
+using (
+  business_id in (
+    select business_id from employees where user_id = auth.uid()
+  )
+);
+```
+
+Apply the same pattern to all tables. Owners can manage everything; employees can read products, insert sales, and read customers — but cannot edit products, view accounting, or change settings.
+
+---
+
+## Feature Modules
+
+### 1. Auth & Onboarding
+- Sign up creates a new `business` record and an `employee` record with role `owner`
+- Invite employees by email (Supabase invite flow)
+- Role: `owner` sees all modules; `employee` sees only POS + stock view + customer lookup
+
+### 2. Inventory Management
+- CRUD for products (name, category, buy price, sell price, stock qty)
+- Stock adjustment form (restock or write-off with reason)
+- Low stock indicator when `stock_qty <= low_stock_threshold`
+- Product search/filter by name or category
+
+### 3. Point of Sale (POS)
+- Search and add products to a cart
+- Adjust quantities in cart
+- Choose payment method: **Cash** or **Credit**
+- Credit only selectable if a registered customer is chosen
+- On sale confirmation:
+  - Deduct stock from `products`
+  - Insert `sale` + `sale_items`
+  - If credit: increment `customer.credit_balance`, insert into `cash_log` with type `credit`
+  - If cash: insert into `cash_log` with type `sale`
+- Printable/shareable receipt
+
+### 4. Customer & Credit Management
+- Register customers (name + phone number)
+- View customer profile: credit balance, credit limit, full transaction history
+- Record a credit payment: reduces `credit_balance`, inserts `credit_payment`, inserts `cash_log` entry
+- Search customers by name or phone
+
+### 5. SMS Credit Reminders
+- Uses Africa's Talking API
+- Configuration screen: enable/disable, choose schedule, edit message template
+- Template variables: `{name}`, `{balance}`, `{business}`
+- Supabase Edge Function triggers sends SMS to all customers with `credit_balance > 0`
+- Schedule managed via pg_cron or a cron-triggered Edge Function
+
+**Africa's Talking setup:**
+```javascript
+// Edge Function: send-credit-reminders
+import AfricasTalking from 'africastalking';
+
+const AT = AfricasTalking({
+  apiKey: Deno.env.get('AT_API_KEY'),
+  username: Deno.env.get('AT_USERNAME'),
+});
+
+// Fetch all customers with outstanding credit for this business
+// Personalise message using reminder_config.message_template
+// Send via AT.SMS.send()
+```
+
+### 6. Accounting Dashboard
+- **Daily / Weekly / Monthly** toggles
+- Total Sales Revenue
+- Total Cost of Goods Sold (COGS)
+- Gross Profit = Revenue - COGS
+- Cash on Hand (sum of cash_log type=`sale` minus type=`bank_deposit` minus type=`expense`)
+- Total Banked (sum of cash_log type=`bank_deposit`)
+- Total Outstanding Credit (sum of all customer `credit_balance`)
+- Log a bank deposit or expense directly from dashboard
+- Simple bar chart of sales over time (use Recharts)
+
+---
+
+## Freemium Plan Limits
+
+Enforce these limits in the application layer (and optionally in DB triggers):
+
+| Feature | Free | Starter | Business | Shop+ |
+|---|---|---|---|---|
+| Products | 50 | Unlimited | Unlimited | Unlimited |
+| Customers | 10 | 50 | Unlimited | Unlimited |
+| Users | 1 | 2 | 5 | 10 |
+| SMS Reminders | ❌ | ❌ | ✅ (50/mo free) | ✅ (200/mo free) |
+| Accounting Dashboard | Basic | Basic | Full | Full |
+| Mobile App | ❌ | ✅ | ✅ | ✅ |
+| Multi-branch | ❌ | ❌ | ❌ | ✅ |
+| Price (UGX/mo) | 0 | 25,000 | 60,000 | 120,000 |
+
+---
+
+## Mobile App (Expo)
+
+Build after web app is stable. Mirror these screens only:
+
+- Login
+- POS (sales entry)
+- Product list + stock view
+- Customer lookup + credit balance
+- Record credit payment
+
+The mobile app uses the same Supabase client (`@supabase/supabase-js`) with the same auth tokens. No separate API needed.
+
+---
+
+## Environment Variables
+
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Africa's Talking
+AT_API_KEY=
+AT_USERNAME=
+
+# App
+NEXT_PUBLIC_APP_URL=
+```
+
+---
+
+## Build Order (Recommended)
+
+1. **Supabase schema** — run all migrations, set up RLS policies, seed test data
+2. **Next.js project** — set up with Tailwind, Supabase client, auth middleware
+3. **Auth flow** — sign up, login, business creation, employee invite
+4. **Products module** — CRUD + stock adjustments
+5. **POS module** — cart, cash sale, credit sale
+6. **Customers module** — register, view balance, record payment
+7. **Accounting dashboard** — cash log, reports, charts
+8. **SMS reminders** — Africa's Talking Edge Function + schedule config
+9. **Plan limits** — enforce freemium gates
+10. **Mobile app (Expo)** — port POS + stock + customer screens
+
+---
+
+## Notes
+
+- Target market: small businesses in Uganda (liquor stores, hardware shops, pharmacies, salons)
+- All prices displayed in **UGX** throughout the UI
+- The owner of this project is **Bryan / Kazimedia** (kazimedia.co)
+- Primary case study client: a liquor store owner (friend of Bryan's)
+- Deploy web app to **Vercel**
+- Supabase project already connected — use existing credentials
