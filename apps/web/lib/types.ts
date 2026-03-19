@@ -1,14 +1,23 @@
+// ============================================================
+// Tunda — Shared TypeScript types
+// ============================================================
+
 export type Plan = 'free' | 'starter' | 'business' | 'shop_plus'
 export type Role = 'owner' | 'employee'
-export type PaymentType = 'cash' | 'credit'
-export type CashLogType = 'sale' | 'bank_deposit' | 'expense' | 'credit_payment'
-export type ReminderSchedule = 'daily' | 'weekly' | 'monthly' | 'custom'
+export type InvoiceStatus = 'draft' | 'open' | 'partial' | 'paid' | 'overdue' | 'void'
+export type BillStatus = 'draft' | 'open' | 'partial' | 'paid'
+export type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
+export type BankAccountType = 'cash' | 'checking' | 'savings' | 'mobile_money'
+export type PaymentMethod = 'cash' | 'credit' | 'mobile_money' | 'bank'
 
+// ─── Core ────────────────────────────────────────────────
 export interface Business {
   id: string
   name: string
   owner_id: string
   plan: Plan
+  next_invoice_number: number
+  next_bill_number: number
   created_at: string
 }
 
@@ -20,6 +29,7 @@ export interface Employee {
   created_at: string
 }
 
+// ─── Inventory ───────────────────────────────────────────
 export interface Product {
   id: string
   business_id: string
@@ -33,6 +43,7 @@ export interface Product {
   created_at: string
 }
 
+// ─── Customers ───────────────────────────────────────────
 export interface Customer {
   id: string
   business_id: string
@@ -44,81 +55,183 @@ export interface Customer {
   created_at: string
 }
 
-export interface Sale {
+// ─── Vendors ─────────────────────────────────────────────
+export interface Vendor {
   id: string
   business_id: string
-  employee_id: string
-  customer_id: string | null
-  payment_type: PaymentType
+  name: string
+  phone: string | null
+  email: string | null
+  address: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+}
+
+// ─── Purchase Bills ──────────────────────────────────────
+export interface PurchaseBill {
+  id: string
+  business_id: string
+  vendor_id: string | null
+  bill_number: string
+  status: BillStatus
+  issue_date: string
+  due_date: string | null
   total_amount: number
+  amount_paid: number
+  notes: string | null
+  created_at: string
+}
+
+export interface PurchaseBillItem {
+  id: string
+  bill_id: string
+  product_id: string | null
+  description: string | null
+  qty: number
+  unit_cost: number
+  created_at: string
+}
+
+export interface PurchaseBillPayment {
+  id: string
+  bill_id: string
+  business_id: string
+  amount: number
+  payment_date: string
   note: string | null
   created_at: string
 }
 
-export interface SaleItem {
+// ─── Invoices ────────────────────────────────────────────
+export interface Invoice {
   id: string
-  sale_id: string
-  product_id: string
+  business_id: string
+  employee_id: string | null
+  customer_id: string | null
+  invoice_number: string
+  status: InvoiceStatus
+  issue_date: string
+  due_date: string | null
+  total_amount: number
+  amount_paid: number
+  payment_method: PaymentMethod | null
+  note: string | null
+  created_at: string
+}
+
+export interface InvoiceItem {
+  id: string
+  invoice_id: string
+  product_id: string | null
+  description: string | null
   qty: number
   unit_price: number
   unit_cost: number
+  created_at: string
 }
 
-export interface CreditPayment {
+export interface InvoicePayment {
   id: string
+  invoice_id: string
   business_id: string
-  customer_id: string
   amount: number
+  payment_date: string
+  payment_method: PaymentMethod | null
   note: string | null
   created_at: string
 }
 
-export interface CashLog {
+// ─── Banking ─────────────────────────────────────────────
+export interface BankAccount {
   id: string
   business_id: string
-  type: CashLogType
-  amount: number
-  note: string | null
+  name: string
+  account_type: BankAccountType
+  institution: string | null
+  opening_balance: number
+  current_balance: number
+  is_active: boolean
   created_at: string
 }
 
+export interface BankTransaction {
+  id: string
+  bank_account_id: string
+  business_id: string
+  type: 'deposit' | 'withdrawal' | 'transfer'
+  amount: number
+  description: string | null
+  reference: string | null
+  transaction_date: string
+  created_at: string
+}
+
+// ─── Chart of Accounts ───────────────────────────────────
+export interface Account {
+  id: string
+  business_id: string
+  code: string
+  name: string
+  type: AccountType
+  is_system: boolean
+  created_at: string
+}
+
+// ─── Support ─────────────────────────────────────────────
 export interface ReminderConfig {
   id: string
   business_id: string
   is_enabled: boolean
-  schedule: ReminderSchedule
+  schedule: 'daily' | 'weekly' | 'monthly' | 'custom'
   custom_cron: string | null
   message_template: string
   updated_at: string
 }
 
-export interface StockAdjustment {
-  id: string
-  business_id: string
-  product_id: string
-  qty_change: number
-  reason: string | null
-  created_at: string
-}
-
-// Plan limits
+// ─── Plan Limits ─────────────────────────────────────────
 export const PLAN_LIMITS: Record<Plan, {
   products: number | null
   customers: number | null
   users: number
   sms: boolean
   smsMonthly: number
-  fullAccounting: boolean
-  mobileApp: boolean
-  multiBranch: boolean
   priceUGX: number
 }> = {
-  free:      { products: 50,   customers: 10,   users: 1,  sms: false, smsMonthly: 0,   fullAccounting: false, mobileApp: false, multiBranch: false, priceUGX: 0 },
-  starter:   { products: null, customers: 50,   users: 2,  sms: false, smsMonthly: 0,   fullAccounting: false, mobileApp: true,  multiBranch: false, priceUGX: 25000 },
-  business:  { products: null, customers: null, users: 5,  sms: true,  smsMonthly: 50,  fullAccounting: true,  mobileApp: true,  multiBranch: false, priceUGX: 60000 },
-  shop_plus: { products: null, customers: null, users: 10, sms: true,  smsMonthly: 200, fullAccounting: true,  mobileApp: true,  multiBranch: true,  priceUGX: 120000 },
+  free:      { products: 50,   customers: 10,   users: 1,  sms: false, smsMonthly: 0,   priceUGX: 0 },
+  starter:   { products: null, customers: 50,   users: 2,  sms: false, smsMonthly: 0,   priceUGX: 25000 },
+  business:  { products: null, customers: null, users: 5,  sms: true,  smsMonthly: 50,  priceUGX: 60000 },
+  shop_plus: { products: null, customers: null, users: 10, sms: true,  smsMonthly: 200, priceUGX: 120000 },
 }
 
+// ─── Helpers ─────────────────────────────────────────────
 export function formatUGX(amount: number): string {
   return `UGX ${amount.toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+export function invoiceStatusLabel(status: InvoiceStatus): string {
+  const map: Record<InvoiceStatus, string> = {
+    draft: 'Draft', open: 'Unpaid', partial: 'Partial',
+    paid: 'Paid', overdue: 'Overdue', void: 'Void',
+  }
+  return map[status]
+}
+
+export function billStatusLabel(status: BillStatus): string {
+  const map: Record<BillStatus, string> = {
+    draft: 'Draft', open: 'Unpaid', partial: 'Partial', paid: 'Paid',
+  }
+  return map[status]
+}
+
+export function statusColor(status: InvoiceStatus | BillStatus): string {
+  const map: Record<string, string> = {
+    paid:    'bg-emerald-100 text-emerald-700',
+    partial: 'bg-amber-100 text-amber-700',
+    open:    'bg-blue-100 text-blue-700',
+    overdue: 'bg-red-100 text-red-700',
+    draft:   'bg-slate-100 text-slate-500',
+    void:    'bg-slate-100 text-slate-400',
+  }
+  return map[status] ?? 'bg-slate-100 text-slate-500'
 }

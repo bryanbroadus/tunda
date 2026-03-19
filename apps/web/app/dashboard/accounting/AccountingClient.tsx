@@ -14,12 +14,12 @@ interface Props {
 
 interface SummaryData {
   revenue: number
+  cashCollected: number
   cogs: number
-  profit: number
-  cashOnHand: number
-  totalBanked: number
-  totalCredit: number
-  chartData: { label: string; revenue: number }[]
+  grossProfit: number
+  outstandingReceivables: number
+  outstandingPayables: number
+  chartData: { label: string; collected: number }[]
 }
 
 function getPeriodRange(period: Period): { start: Date; end: Date } {
@@ -40,103 +40,106 @@ function getPeriodRange(period: Period): { start: Date; end: Date } {
   return { start, end }
 }
 
+function dateStr(d: Date): string {
+  return d.toISOString().split('T')[0]
+}
+
 export default function AccountingClient({ businessId, plan }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [data, setData] = useState<SummaryData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showLogForm, setShowLogForm] = useState<'bank_deposit' | 'expense' | null>(null)
-  const [logForm, setLogForm] = useState({ amount: '', note: '' })
-  const [saving, setSaving] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const { start, end } = getPeriodRange(period)
+    const startStr = dateStr(start)
+    const endStr = dateStr(end)
 
-    // Sales + sale_items for revenue & COGS
-    const { data: sales } = await supabase
-      .from('sales')
-      .select('id, total_amount, payment_type, created_at')
+    // Revenue: billed amount on invoices issued in period
+    const { data: invoices } = await supabase
+      .from('invoices')
+      .select('id, total_amount, issue_date')
       .eq('business_id', businessId)
-      .gte('created_at', start.toISOString())
-      .lte('created_at', end.toISOString())
+      .neq('status', 'void')
+      .gte('issue_date', startStr)
+      .lte('issue_date', endStr)
 
-    const saleIds = sales?.map(s => s.id) ?? []
-    let cogsTotal = 0
-    if (saleIds.length > 0) {
+    const revenue = invoices?.reduce((s, i) => s + Number(i.total_amount), 0) ?? 0
+
+    // Cash collected: payments received in period
+    const { data: payments } = await supabase
+      .from('invoice_payments')
+      .select('amount, payment_date')
+      .eq('business_id', businessId)
+      .gte('payment_date', startStr)
+      .lte('payment_date', endStr)
+
+    const cashCollected = payments?.reduce((s, p) => s + Number(p.amount), 0) ?? 0
+
+    // COGS: sum of qty * unit_cost for invoice items in period invoices
+    const invoiceIds = invoices?.map(i => i.id) ?? []
+    let cogs = 0
+    if (invoiceIds.length > 0) {
       const { data: items } = await supabase
-        .from('sale_items')
+        .from('invoice_items')
         .select('qty, unit_cost')
-        .in('sale_id', saleIds)
-      cogsTotal = items?.reduce((s, i) => s + i.qty * i.unit_cost, 0) ?? 0
+        .in('invoice_id', invoiceIds)
+      cogs = items?.reduce((s, i) => s + i.qty * i.unit_cost, 0) ?? 0
     }
 
-    const revenue = sales?.reduce((s, r) => s + Number(r.total_amount), 0) ?? 0
-
-    // Cash log
-    const { data: cashLog } = await supabase
-      .from('cash_log')
-      .select('type, amount')
+    // Outstanding receivables: all unpaid invoices (open + partial)
+    const { data: openInvoices } = await supabase
+      .from('invoices')
+      .select('total_amount, amount_paid')
       .eq('business_id', businessId)
-      .gte('created_at', start.toISOString())
-      .lte('created_at', end.toISOString())
+      .in('status', ['open', 'partial'])
 
-    const sumType = (type: string) =>
-      cashLog?.filter(r => r.type === type).reduce((s, r) => s + Number(r.amount), 0) ?? 0
+    const outstandingReceivables = openInvoices?.reduce(
+      (s, i) => s + (Number(i.total_amount) - Number(i.amount_paid)), 0
+    ) ?? 0
 
-    const cashIn = sumType('sale')
-    const banked = sumType('bank_deposit')
-    const expenses = sumType('expense')
-    const cashOnHand = cashIn - banked - expenses
-
-    // Outstanding credit (all time)
-    const { data: creditCustomers } = await supabase
-      .from('customers')
-      .select('credit_balance')
+    // Outstanding payables: all unpaid purchase bills
+    const { data: openBills } = await supabase
+      .from('purchase_bills')
+      .select('total_amount, amount_paid')
       .eq('business_id', businessId)
-      .gt('credit_balance', 0)
-    const totalCredit = creditCustomers?.reduce((s, c) => s + Number(c.credit_balance), 0) ?? 0
+      .in('status', ['open', 'partial'])
 
-    // Chart: group sales by day
+    const outstandingPayables = openBills?.reduce(
+      (s, b) => s + (Number(b.total_amount) - Number(b.amount_paid)), 0
+    ) ?? 0
+
+    // Chart: group payments by payment_date
     const chartMap: Record<string, number> = {}
-    sales?.forEach(s => {
-      const day = new Date(s.created_at).toLocaleDateString('en-UG', { month: 'short', day: 'numeric' })
-      chartMap[day] = (chartMap[day] ?? 0) + Number(s.total_amount)
+    payments?.forEach(p => {
+      chartMap[p.payment_date] = (chartMap[p.payment_date] ?? 0) + Number(p.amount)
     })
-    const chartData = Object.entries(chartMap)
-      .map(([label, revenue]) => ({ label, revenue }))
-      .sort((a, b) => new Date(a.label).getTime() - new Date(b.label).getTime())
+
+    // Build ordered chart data for the period
+    const chartData: { label: string; collected: number }[] = []
+    const days = period === 'day' ? 1 : period === 'week' ? 7 : 30
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const key = dateStr(d)
+      const label = d.toLocaleDateString('en-UG', { month: 'short', day: 'numeric' })
+      chartData.push({ label, collected: chartMap[key] ?? 0 })
+    }
 
     setData({
       revenue,
-      cogs: cogsTotal,
-      profit: revenue - cogsTotal,
-      cashOnHand,
-      totalBanked: banked,
-      totalCredit,
+      cashCollected,
+      cogs,
+      grossProfit: cashCollected - cogs,
+      outstandingReceivables,
+      outstandingPayables,
       chartData,
     })
     setLoading(false)
   }, [businessId, period])
 
   useEffect(() => { fetchData() }, [fetchData])
-
-  async function handleLogEntry(e: React.FormEvent) {
-    e.preventDefault()
-    if (!showLogForm) return
-    setSaving(true)
-    const supabase = createClient()
-    await supabase.from('cash_log').insert({
-      business_id: businessId,
-      type: showLogForm,
-      amount: parseFloat(logForm.amount),
-      note: logForm.note.trim() || null,
-    })
-    setShowLogForm(null)
-    setLogForm({ amount: '', note: '' })
-    setSaving(false)
-    fetchData()
-  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -158,74 +161,32 @@ export default function AccountingClient({ businessId, plan }: Props) {
         <div className="text-center py-16 text-slate-400">Loading…</div>
       ) : data && (
         <>
-          {/* Summary cards */}
+          {/* Period summary */}
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            <StatCard label="Total Revenue" value={formatUGX(data.revenue)} color="emerald" />
+            <StatCard label="Revenue (Billed)" value={formatUGX(data.revenue)} color="emerald" />
+            <StatCard label="Cash Collected" value={formatUGX(data.cashCollected)} color="blue" />
             <StatCard label="Cost of Goods (COGS)" value={formatUGX(data.cogs)} color="slate" />
-            <StatCard label="Gross Profit" value={formatUGX(data.profit)} color={data.profit >= 0 ? 'emerald' : 'red'} />
-            <StatCard label="Cash on Hand" value={formatUGX(data.cashOnHand)} color="blue" />
-            <StatCard label="Total Banked" value={formatUGX(data.totalBanked)} color="blue" />
-            <StatCard label="Outstanding Credit" value={formatUGX(data.totalCredit)} color="orange" />
+            <StatCard label="Gross Profit" value={formatUGX(data.grossProfit)} color={data.grossProfit >= 0 ? 'emerald' : 'red'} />
+            <StatCard label="Outstanding Receivables" value={formatUGX(data.outstandingReceivables)} color="orange" />
+            <StatCard label="Outstanding Payables" value={formatUGX(data.outstandingPayables)} color="red" />
           </div>
 
-          {/* Chart */}
-          {data.chartData.length > 0 && (
+          {/* Cash collected chart */}
+          {data.chartData.some(d => d.collected > 0) && (
             <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
-              <p className="text-sm font-medium text-slate-700 mb-4">Sales Revenue</p>
+              <p className="text-sm font-medium text-slate-700 mb-4">Cash Collected by Day</p>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={data.chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(v) => formatUGX(Number(v))} />
-                  <Bar dataKey="revenue" fill="#059669" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="collected" fill="#059669" radius={[4, 4, 0, 0]} name="Cash Collected" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* Log deposit / expense */}
-          <div className="flex gap-3">
-            <button onClick={() => setShowLogForm('bank_deposit')}
-              className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50">
-              + Log Bank Deposit
-            </button>
-            <button onClick={() => setShowLogForm('expense')}
-              className="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50">
-              + Log Expense
-            </button>
-          </div>
         </>
-      )}
-
-      {showLogForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">
-                {showLogForm === 'bank_deposit' ? 'Log Bank Deposit' : 'Log Expense'}
-              </h2>
-              <button onClick={() => setShowLogForm(null)} className="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
-            </div>
-            <form onSubmit={handleLogEntry} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Amount (UGX)</label>
-                <input required type="number" min="1" value={logForm.amount}
-                  onChange={e => setLogForm(f => ({ ...f, amount: e.target.value }))}
-                  className="input" placeholder="0" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Note</label>
-                <input value={logForm.note} onChange={e => setLogForm(f => ({ ...f, note: e.target.value }))}
-                  className="input" placeholder="Optional description" />
-              </div>
-              <button type="submit" disabled={saving}
-                className="w-full py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </form>
-          </div>
-        </div>
       )}
     </div>
   )
