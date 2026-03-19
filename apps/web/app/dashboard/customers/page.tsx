@@ -12,7 +12,6 @@ export default async function CustomersPage() {
     .single()
 
   const businessId = employee?.business_id as string
-  const plan = (employee?.businesses as unknown as { plan: string } | null)?.plan ?? 'free'
   const role = employee?.role as 'owner' | 'employee'
 
   const { data: customers } = await supabase
@@ -26,7 +25,6 @@ export default async function CustomersPage() {
     <CustomersClient
       initialCustomers={customers ?? []}
       businessId={businessId}
-      plan={plan}
       role={role}
     />
   )

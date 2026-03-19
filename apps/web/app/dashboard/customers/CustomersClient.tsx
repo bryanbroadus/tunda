@@ -2,12 +2,11 @@
 
 import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { type Customer, type Plan, PLAN_LIMITS, formatUGX } from '@/lib/types'
+import { type Customer, formatUGX } from '@/lib/types'
 
 interface Props {
   initialCustomers: Customer[]
   businessId: string
-  plan: string
   role: 'owner' | 'employee'
 }
 
@@ -25,7 +24,7 @@ interface CreditPayment {
   note: string | null
 }
 
-export default function CustomersClient({ initialCustomers, businessId, plan, role }: Props) {
+export default function CustomersClient({ initialCustomers, businessId, role }: Props) {
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers)
   const [search, setSearch] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
@@ -37,9 +36,6 @@ export default function CustomersClient({ initialCustomers, businessId, plan, ro
   const [addForm, setAddForm] = useState({ name: '', phone: '', credit_limit: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-
-  const limits = PLAN_LIMITS[plan as Plan]
-  const atLimit = limits.customers !== null && customers.length >= limits.customers
 
   const filtered = useMemo(() =>
     customers.filter(c =>
@@ -132,19 +128,11 @@ export default function CustomersClient({ initialCustomers, businessId, plan, ro
         </div>
         <button
           onClick={() => { setShowAddForm(true); setError('') }}
-          disabled={atLimit}
-          title={atLimit ? `Upgrade to add more than ${limits.customers} customers` : undefined}
-          className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
         >
           + Add Customer
         </button>
       </div>
-
-      {atLimit && (
-        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          You've reached the {limits.customers}-customer limit on the <strong>{plan}</strong> plan. Upgrade to add more.
-        </div>
-      )}
 
       <input
         type="text"

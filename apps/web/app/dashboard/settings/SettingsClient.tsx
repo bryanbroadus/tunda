@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { PLAN_LIMITS, formatUGX, type Plan } from '@/lib/types'
+// Note: plan limits are defined but not enforced during testing
 
 interface Props {
   business: { id: string; name: string; plan: string }
@@ -50,8 +51,6 @@ export default function SettingsClient({ business, employees, currentUserId }: P
     }
     setInviting(false)
   }
-
-  const atUserLimit = employees.length >= limits.users
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -112,34 +111,28 @@ export default function SettingsClient({ business, employees, currentUserId }: P
           ))}
         </div>
 
-        {atUserLimit ? (
-          <p className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded">
-            You've reached the {limits.users}-member limit. Upgrade your plan to add more team members.
-          </p>
-        ) : (
-          <form onSubmit={handleInvite} className="space-y-2">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Invite by Email</label>
-              <input
-                type="email"
-                required
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
-                className="input"
-                placeholder="colleague@example.com"
-              />
-            </div>
-            {inviteMessage && (
-              <p className={`text-sm px-3 py-2 rounded ${inviteMessage.startsWith('Error') ? 'text-red-600 bg-red-50' : 'text-emerald-700 bg-emerald-50'}`}>
-                {inviteMessage}
-              </p>
-            )}
-            <button type="submit" disabled={inviting}
-              className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50">
-              {inviting ? 'Sending…' : 'Send Invite'}
-            </button>
-          </form>
-        )}
+        <form onSubmit={handleInvite} className="space-y-2">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Invite by Email</label>
+            <input
+              type="email"
+              required
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              className="input"
+              placeholder="colleague@example.com"
+            />
+          </div>
+          {inviteMessage && (
+            <p className={`text-sm px-3 py-2 rounded ${inviteMessage.startsWith('Error') ? 'text-red-600 bg-red-50' : 'text-emerald-700 bg-emerald-50'}`}>
+              {inviteMessage}
+            </p>
+          )}
+          <button type="submit" disabled={inviting}
+            className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50">
+            {inviting ? 'Sending…' : 'Send Invite'}
+          </button>
+        </form>
       </section>
     </div>
   )

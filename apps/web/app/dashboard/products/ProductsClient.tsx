@@ -2,12 +2,11 @@
 
 import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { type Product, type Plan, PLAN_LIMITS, formatUGX } from '@/lib/types'
+import { type Product, formatUGX } from '@/lib/types'
 
 interface Props {
   initialProducts: Product[]
   businessId: string
-  plan: string
   role: 'owner' | 'employee'
 }
 
@@ -20,7 +19,7 @@ const EMPTY_FORM = {
   low_stock_threshold: '5',
 }
 
-export default function ProductsClient({ initialProducts, businessId, plan, role }: Props) {
+export default function ProductsClient({ initialProducts, businessId, role }: Props) {
   const [products, setProducts] = useState<Product[]>(initialProducts)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -31,9 +30,6 @@ export default function ProductsClient({ initialProducts, businessId, plan, role
   const [adjustForm, setAdjustForm] = useState({ qty_change: '', reason: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-
-  const limits = PLAN_LIMITS[plan as Plan]
-  const atLimit = limits.products !== null && products.length >= limits.products
 
   const categories = useMemo(() => {
     const cats = [...new Set(products.map(p => p.category).filter(Boolean))] as string[]
@@ -151,20 +147,12 @@ export default function ProductsClient({ initialProducts, businessId, plan, role
         {role === 'owner' && (
           <button
             onClick={openAdd}
-            disabled={atLimit}
-            title={atLimit ? `Upgrade to add more than ${limits.products} products` : undefined}
-            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
           >
             + Add Product
           </button>
         )}
       </div>
-
-      {atLimit && (
-        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          You've reached the {limits.products}-product limit on the <strong>{plan}</strong> plan. Upgrade to add more.
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex gap-3 mb-4">

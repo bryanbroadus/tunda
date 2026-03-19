@@ -23,6 +23,7 @@ export default function POSClient({ products, customers, businessId, employeeId 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
   const [note, setNote] = useState('')
+  const [saleDate, setSaleDate] = useState(() => new Date().toISOString().split('T')[0])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [receipt, setReceipt] = useState<{ saleId: string; items: CartItem[]; total: number; paymentType: string; customer: Customer | null } | null>(null)
@@ -71,6 +72,9 @@ export default function POSClient({ products, customers, businessId, employeeId 
 
     const supabase = createClient()
 
+    // Build sale timestamp: noon on the chosen date (avoids timezone-edge issues)
+    const saleDateISO = new Date(`${saleDate}T12:00:00`).toISOString()
+
     // Insert sale
     const { data: sale, error: saleError } = await supabase
       .from('sales')
@@ -81,6 +85,7 @@ export default function POSClient({ products, customers, businessId, employeeId 
         payment_type: paymentType,
         total_amount: cartTotal,
         note: note.trim() || null,
+        created_at: saleDateISO,
       })
       .select()
       .single()
@@ -107,12 +112,13 @@ export default function POSClient({ products, customers, businessId, employeeId 
         .eq('id', item.product.id)
     }
 
-    // Cash log
+    // Cash log — use same date as the sale
     await supabase.from('cash_log').insert({
       business_id: businessId,
       type: paymentType === 'cash' ? 'sale' : 'credit_payment',
       amount: cartTotal,
       note: `Sale #${sale.id.slice(0, 8)}`,
+      created_at: saleDateISO,
     })
 
     // Update customer credit balance
@@ -128,6 +134,7 @@ export default function POSClient({ products, customers, businessId, employeeId 
     setNote('')
     setSelectedCustomer(null)
     setPaymentType('cash')
+    setSaleDate(new Date().toISOString().split('T')[0])
     setSubmitting(false)
   }
 
@@ -281,6 +288,18 @@ export default function POSClient({ products, customers, businessId, employeeId 
               )}
             </div>
           )}
+
+          {/* Sale Date */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Sale Date</label>
+            <input
+              type="date"
+              value={saleDate}
+              max={new Date().toISOString().split('T')[0]}
+              onChange={e => setSaleDate(e.target.value)}
+              className="input text-xs"
+            />
+          </div>
 
           {/* Note */}
           <input

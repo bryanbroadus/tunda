@@ -12,7 +12,6 @@ export default async function ProductsPage() {
     .single()
 
   const businessId = employee?.business_id as string
-  const plan = (employee?.businesses as unknown as { plan: string } | null)?.plan ?? 'free'
   const role = employee?.role as 'owner' | 'employee'
 
   const { data: products } = await supabase
@@ -26,7 +25,6 @@ export default async function ProductsPage() {
     <ProductsClient
       initialProducts={products ?? []}
       businessId={businessId}
-      plan={plan}
       role={role}
     />
   )

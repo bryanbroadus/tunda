@@ -138,8 +138,6 @@ export default function AccountingClient({ businessId, plan }: Props) {
     fetchData()
   }
 
-  const isFullPlan = plan === 'business' || plan === 'shop_plus'
-
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -165,17 +163,9 @@ export default function AccountingClient({ businessId, plan }: Props) {
             <StatCard label="Total Revenue" value={formatUGX(data.revenue)} color="emerald" />
             <StatCard label="Cost of Goods (COGS)" value={formatUGX(data.cogs)} color="slate" />
             <StatCard label="Gross Profit" value={formatUGX(data.profit)} color={data.profit >= 0 ? 'emerald' : 'red'} />
-            {isFullPlan ? (
-              <>
-                <StatCard label="Cash on Hand" value={formatUGX(data.cashOnHand)} color="blue" />
-                <StatCard label="Total Banked" value={formatUGX(data.totalBanked)} color="blue" />
-                <StatCard label="Outstanding Credit" value={formatUGX(data.totalCredit)} color="orange" />
-              </>
-            ) : (
-              <div className="col-span-2 lg:col-span-3 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-                <strong>Upgrade to Business plan</strong> to see Cash on Hand, Banked totals, and log expenses/deposits.
-              </div>
-            )}
+            <StatCard label="Cash on Hand" value={formatUGX(data.cashOnHand)} color="blue" />
+            <StatCard label="Total Banked" value={formatUGX(data.totalBanked)} color="blue" />
+            <StatCard label="Outstanding Credit" value={formatUGX(data.totalCredit)} color="orange" />
           </div>
 
           {/* Chart */}
@@ -195,18 +185,16 @@ export default function AccountingClient({ businessId, plan }: Props) {
           )}
 
           {/* Log deposit / expense */}
-          {isFullPlan && (
-            <div className="flex gap-3">
-              <button onClick={() => setShowLogForm('bank_deposit')}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50">
-                + Log Bank Deposit
-              </button>
-              <button onClick={() => setShowLogForm('expense')}
-                className="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50">
-                + Log Expense
-              </button>
-            </div>
-          )}
+          <div className="flex gap-3">
+            <button onClick={() => setShowLogForm('bank_deposit')}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50">
+              + Log Bank Deposit
+            </button>
+            <button onClick={() => setShowLogForm('expense')}
+              className="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50">
+              + Log Expense
+            </button>
+          </div>
         </>
       )}
 
