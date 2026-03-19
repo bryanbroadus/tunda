@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!employee) redirect('/onboarding')
 
-  const business = employee.businesses as { id: string; name: string; plan: string } | null
+  const business = employee.businesses as unknown as { id: string; name: string; plan: string } | null
   if (!business) redirect('/onboarding')
 
   return (

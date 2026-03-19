@@ -24,7 +24,7 @@ export default async function POSPage() {
 
   const { data: customers } = await supabase
     .from('customers')
-    .select('id, name, phone, credit_balance, credit_limit')
+    .select('*')
     .eq('business_id', businessId)
     .eq('is_active', true)
     .order('name')

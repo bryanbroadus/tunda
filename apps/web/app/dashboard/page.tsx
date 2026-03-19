@@ -12,7 +12,7 @@ export default async function DashboardPage() {
     .single()
 
   const businessId = employee?.business_id
-  const business = employee?.businesses as { name: string; plan: string } | null
+  const business = employee?.businesses as unknown as { name: string; plan: string } | null
 
   // Fetch today's summary
   const today = new Date()

@@ -15,7 +15,7 @@ export default async function AccountingPage() {
   if (employee?.role !== 'owner') redirect('/dashboard')
 
   const businessId = employee.business_id as string
-  const plan = (employee.businesses as { plan: string } | null)?.plan ?? 'free'
+  const plan = (employee.businesses as unknown as { plan: string } | null)?.plan ?? 'free'
 
   return <AccountingClient businessId={businessId} plan={plan} />
 }

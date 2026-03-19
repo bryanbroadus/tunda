@@ -14,7 +14,7 @@ export default async function SettingsPage() {
 
   if (employee?.role !== 'owner') redirect('/dashboard')
 
-  const business = employee.businesses as { id: string; name: string; plan: string } | null
+  const business = employee.businesses as unknown as { id: string; name: string; plan: string } | null
   const { data: employees } = await supabase
     .from('employees')
     .select('id, role, user_id')
