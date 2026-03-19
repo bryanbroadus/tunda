@@ -237,3 +237,11 @@ GRANT EXECUTE ON FUNCTION next_bill_number(uuid) TO authenticated;
 -- NOTE: Old tables (sales, sale_items, credit_payments) kept for fallback.
 --       Drop them after verifying new data is correct:
 --       DROP TABLE sales, sale_items, credit_payments;
+
+-- HOTFIX applied post-migration (migration trigger race condition):
+-- The invoice_payment trigger fired during credit_payment migration and
+-- inadvertently reset cash invoice amount_paid to 0 via SUM(invoice_payments)
+-- where no payment rows existed. Fix: set amount_paid = total_amount for
+-- all cash paid invoices where amount_paid is still 0.
+-- UPDATE invoices SET amount_paid = total_amount
+-- WHERE payment_method = 'cash' AND status = 'paid' AND amount_paid < total_amount;
