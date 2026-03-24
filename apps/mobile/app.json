@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Tunda",
+    "slug": "tunda",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "co.kazimedia.tunda"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "co.kazimedia.tunda",
+      "permissions": ["RECEIVE_BOOT_COMPLETED", "VIBRATE"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#059669",
+          "sounds": []
+        }
+      ],
+      "expo-sqlite",
+      "expo-secure-store"
+    ],
+    "scheme": "tunda",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
